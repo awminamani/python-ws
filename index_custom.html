@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Limo Node Dashboard</title>
+<style>
+:root{--bg:#0b1020;--card:#121a2e;--line:#26324d;--text:#f4f7fb;--muted:#91a0ba;--accent:#7c5cff;--good:#31d158;--bad:#ff5c6c}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#090d18,#101830);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+.container{max-width:1100px;margin:0 auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+h1{margin:0 0 4px;font-size:27px}.sub{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+.stat,.card{background:rgba(18,26,46,.92);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 40px #0004}
+.stat{padding:18px}.stat b{font-size:26px;display:block;margin-top:6px}.stat span{color:var(--muted);font-size:13px}
+.card{padding:20px;margin-bottom:16px}.card h2{font-size:18px;margin:0 0 16px}
+.form{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.field{display:flex;flex-direction:column;gap:7px}.full{grid-column:1/-1}
+label{color:#dce4f2;font-weight:600}input[type=text],input[type=number],input[type=password]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#0d1528;color:white;outline:none}
+input:focus{border-color:var(--accent)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.check{display:flex;align-items:center;gap:8px;background:#0d1528;border:1px solid var(--line);padding:12px;border-radius:10px}
+button{border:0;border-radius:10px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#fff}.secondary{background:#1c2740;color:#fff}.danger{background:#4a1c28;color:#ffdce1}
+.status{margin-top:12px;color:var(--muted)}.config{padding:14px;border:1px solid var(--line);border-radius:12px;background:#0d1528;margin-top:10px}.config b{color:#cfc6ff}.url{font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#c9d4e8;margin-top:8px}
+.note{font-size:13px;color:var(--muted);line-height:1.5}.hidden{display:none}
+@media(max-width:750px){.grid{grid-template-columns:repeat(2,1fr)}.form{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="top">
+    <div>
+      <h1>⚡ Limo Node Dashboard</h1>
+      <div class="sub">Manage generated configs without editing the Python file.</div>
+    </div>
+    <div class="row">
+      <button class="secondary" onclick="loadAll()">↻ Refresh</button>
+      <button class="primary" onclick="saveSettings()">Save settings</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><span>Enabled configs</span><b id="count">-</b></div>
+    <div class="stat"><span>Public port</span><b id="portStat">-</b></div>
+    <div class="stat"><span>Security</span><b id="tlsStat">-</b></div>
+    <div class="stat"><span>WebSocket path</span><b id="pathStat">-</b></div>
+  </div>
+
+  <div class="card">
+    <h2>Connection settings</h2>
+    <div class="form">
+      <div class="field">
+        <label>Domain / IP</label>
+        <input id="domain" type="text" placeholder="example.com">
+      </div>
+      <div class="field">
+        <label>Public config port</label>
+        <input id="public_port" type="number" min="1" max="65535">
+      </div>
+      <div class="field">
+        <label>Node name</label>
+        <input id="name" type="text" placeholder="My Node">
+      </div>
+      <div class="field">
+        <label>WebSocket path</label>
+        <input id="ws_path" type="text" placeholder="ws">
+      </div>
+      <div class="field full">
+        <label>UUID</label>
+        <input id="uuid" type="text">
+      </div>
+      <div class="field full">
+        <label>Security</label>
+        <div class="row">
+          <label class="check"><input id="tls" type="checkbox"> TLS / HTTPS</label>
+          <span class="note">This controls the generated config URLs. It does not create a TLS certificate on this aiohttp process.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Protocols</h2>
+    <div class="row">
+      <label class="check"><input id="vless" type="checkbox"> VLESS</label>
+      <label class="check"><input id="trojan" type="checkbox"> Trojan</label>
+      <label class="check"><input id="shadowsocks" type="checkbox"> Shadowsocks</label>
+    </div>
+    <p class="note">Unchecking a protocol removes it from the subscription and dashboard count.</p>
+  </div>
+
+  <div class="card">
+    <h2>Server</h2>
+    <div class="form">
+      <div class="field">
+        <label>Real listen port</label>
+        <input id="listen_port" type="number" min="1" max="65535">
+      </div>
+      <div class="field">
+        <label>Dashboard authentication</label>
+        <input id="admin_key" type="password" placeholder="Set ADMIN_KEY in environment">
+      </div>
+    </div>
+    <p class="note">The real listen port is read from SERVER_PORT/PORT when the process starts. Changing it here is only reported as “restart required”; the running socket cannot move ports live.</p>
+  </div>
+
+  <div class="card">
+    <h2>Generated configs</h2>
+    <div id="configs">Loading...</div>
+  </div>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function api(url, options={}) {
+  const key = $("admin_key").value.trim();
+  options.headers = {...(options.headers||{}), "Content-Type":"application/json"};
+  if (key) options.headers["X-Admin-Key"] = key;
+  const res = await fetch(url, options);
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function setSettings(s){
+  $("domain").value = s.domain || "";
+  $("public_port").value = s.public_port;
+  $("name").value = s.name || "";
+  $("ws_path").value = s.ws_path || "";
+  $("uuid").value = s.uuid || "";
+  $("tls").checked = !!s.tls;
+  $("vless").checked = !!s.protocols.vless;
+  $("trojan").checked = !!s.protocols.trojan;
+  $("shadowsocks").checked = !!s.protocols.shadowsocks;
+  $("listen_port").value = s.listen_port;
+  $("count").textContent = s.protocol_count;
+  $("portStat").textContent = s.public_port;
+  $("tlsStat").textContent = s.tls ? "TLS" : "NONE";
+  $("pathStat").textContent = "/" + (s.ws_path || "");
+}
+
+async function loadAll(){
+  try{
+    const s = await api("/api/settings");
+    setSettings(s);
+    const c = await api("/api/configs");
+    $("count").textContent = c.count;
+    $("configs").innerHTML = c.configs.length
+      ? c.configs.map(x => `<div class="config"><b>${escapeHtml(x.protocol)}</b><div class="url">${escapeHtml(x.url)}</div><button class="secondary" style="margin-top:10px" onclick='copyText(${JSON.stringify(x.url)})'>Copy</button></div>`).join("")
+      : `<div class="note">No protocols are enabled.</div>`;
+    $("status").textContent = "Loaded.";
+  }catch(e){ $("status").textContent = e.message; }
+}
+
+async function saveSettings(){
+  const body = {
+    domain: $("domain").value.trim(),
+    public_port: Number($("public_port").value),
+    tls: $("tls").checked,
+    name: $("name").value.trim(),
+    ws_path: $("ws_path").value.trim().replace(/^\/+|\/+$/g,""),
+    uuid: $("uuid").value.trim(),
+    listen_port: Number($("listen_port").value),
+    protocols: {
+      vless: $("vless").checked,
+      trojan: $("trojan").checked,
+      shadowsocks: $("shadowsocks").checked
+    }
+  };
+  try{
+    const r = await api("/api/settings", {method:"POST", body:JSON.stringify(body)});
+    $("status").textContent = r.restart_required_for_listen_port
+      ? "Saved. Restart required for the real listen port change."
+      : "Saved successfully.";
+    await loadAll();
+  }catch(e){ $("status").textContent = e.message; }
+}
+
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); $("status").textContent = "Copied."; }
+  catch{ $("status").textContent = "Copy failed."; }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+loadAll();
+</script>
+</body>
+</html>
